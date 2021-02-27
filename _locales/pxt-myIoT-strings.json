@@ -1,0 +1,15 @@
+{
+  "myIoT.IoTSendValueToUbidots|block": "send value %value to Ubidots device %device variable %variable",
+  "myIoT.LEDFeedback|block": "LED matrix feedback %stat",
+  "myIoT.OnOffNum.Off|block": "Off",
+  "myIoT.OnOffNum.On|block": "On",
+  "myIoT.connectUbidots|block": "Connect to Ubidots with token %TKN",
+  "myIoT.getIP|block": "IP address",
+  "myIoT.getWifiConectionStatus|block": "wifi connected?",
+  "myIoT.myIoT_module_init|block": "Connect myIoT module | Serial setup: |RX pin connect to %pinTX|TX pin connect to %pinRX | Wifi setup:| SSID %ssid|Password: %pwd",
+  "myIoT.ububidotsReadValidotsSub|block": "Read value from |device %ubidotsDevice|variable %ubidotsVariable",
+  "myIoT|block": "myIoT",
+  "{id:category}MyIoT": "MyIoT",
+  "{id:group}Ubidots": "Ubidots",
+  "{id:group}Wifi": "Wifi"
+}
