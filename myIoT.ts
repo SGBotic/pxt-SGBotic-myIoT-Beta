@@ -5,56 +5,43 @@ namespace SGBotic {
 
     class wifi_serial_class {
         sending_data: boolean
+        mqtt_busy: boolean
 
         constructor() {
             this.sending_data = false
+            this.mqtt_busy = false
         }
     }
 
-    class wifi_comm_Class {
-        wifiConnected: boolean
-        wifiModuleReady: boolean
-        // CWMODE_OK: boolean
-        //CWQAP_Ok: boolean
-        resp_ok: boolean
-        ipAddress: string
-        sending_data: boolean
+    export class mqttSubPacket {
+        public variableID: string;
+        public value: string;
 
         constructor() {
-            this.wifiConnected = false
-            this.wifiModuleReady = false
-            //this.CWMODE_OK = false
-            //this.CWQAP_Ok = false
-            this.resp_ok = false
-            this.ipAddress = ""
-            this.sending_data = false
-
+            this.variableID = ""
+            this.value = ""
         }
     }
 
-    //type EvtUbidotsDevice = (device: string, variable: string) => void;
+    let mqttSubMessage: mqttSubPacket[] = []
+    let mqttSubVarRcv: string = ""
+    let mqttSubValue: string = ""
 
     let wifi_connected: boolean = false
     let resp_str: string = ""
     let led_Feedback: boolean = true
 
-    let ubidot_server: string = "industrial.api.ubidots.com"
-    let ubidotsToken: string = ""
-    let ubidotsAPIToken: string = ""
+    //let ubidot_server: string = "industrial.api.ubidots.com"
+    //let ubidotsToken: string = ""
+    //let ubidot_server_port: number = 1883
     //let ubi_connected: string = ""
-    let http_status: string = ""
+    //let http_status: string = ""
 
+    let ubidotsAPIToken: string = ""
     let wifi_serial_obj = new wifi_serial_class()
 
-    //let ubidotsDevice: EvtUbidotsDevice = null;
-    //let wifiCommObj = new wifi_comm_Class();
-
-    export enum OnOffNum {
-        //%block="On"
-        On = 1,
-        //%block="Off"
-        Off = 0
-    }
+    let mqttSubCounter: number = 0
+    let ipaddress: string = ""
 
     // write AT command with CR+LF ending
     function sendAT(command: string, wait: number = 100) {
@@ -117,23 +104,53 @@ namespace SGBotic {
         return result
     }
 
+    function getIP(): string {
+
+        let serial_str: string = ""
+        let strData: string = ""
+        let count: number = 0
+        let str_completed: boolean = false;
+
+        let time: number = input.runningTime()
+
+        if (wifi_connected) {
+            sendAT("AT+CIFSR");
+            if (cmdResponse("OK")) {
+                serial_str = resp_str;
+                count = serial_str.indexOf("\"") + 1  //to remove \"
+                strData = serial_str.substr(count, 16)
+                count = strData.indexOf("\"")
+                strData = strData.substr(0, count)
+                return strData;
+            } else {
+                return "ERR"
+            }
+        } else {
+            return "wifi not connected"
+        }
+    }
+
+
+
     /**
     * myIoT connect to wifi
     * @param Configure pin for serial communication
     */
-    //% subcategory=myIoT-Beta
-    //% weight=10 color=#CA85F1
+    //% subcategory=myIoT-MQTT
+    //% weight=100 color=#CA85F1
     //% group="Wifi"
     //% pinRX.fieldEditor="gridpicker" pinRX.fieldOptions.columns=3
     //% pinTX.fieldEditor="gridpicker" pinTX.fieldOptions.columns=3
-    //% blockId="myIoT Init" block="Connect myIoT module | Serial setup: |RX pin connect to %pinTX|TX pin connect to %pinRX | Wifi setup:| SSID %ssid|Password: %pwd"
+    //% blockId="myIoT Init" block="Connect myIoT module | Serial setup: |RX pin connect to %pinTX|TX pin connect to %pinRX | Wifi setup:| SSID %ssid|Password: %pwd | led matrix feedback %fb"
     //% pinTX.defl=SerialPin.P0 
     //% pinRX.defl=SerialPin.P1
     //% ssid.defl=wifi_SSID
     //% pwd.defl=wifi_password
-    export function myIoT_module_init(pinTX: SerialPin, pinRX: SerialPin, ssid: string, pwd: string): void {
+    //% fb.defl=true
+    export function myIoT_module_init(pinTX: SerialPin, pinRX: SerialPin, ssid: string, pwd: string, fb: boolean): void {
         wifi_connected = false
         let resp_ok: boolean = false;
+        led_Feedback = fb
 
         serial.setTxBufferSize(200)
         serial.setRxBufferSize(200)
@@ -155,6 +172,8 @@ namespace SGBotic {
         //sendAT("AT+RST", 1000) // reset
         sendAT("AT+CWJAP=\"" + ssid + "\",\"" + pwd + "\"", 0) // connect to Wifi router
         wifi_connected = waitResponse()
+        ipaddress = getIP()
+
         if (led_Feedback) {
             if (wifi_connected) {
                 basic.showLeds(`
@@ -175,6 +194,7 @@ namespace SGBotic {
             }
 
         }
+        mqttSubCounter = 0;
         //sendAT("AT+CWJAP?")
         //basic.pause(1000)
     }
@@ -182,8 +202,8 @@ namespace SGBotic {
     /**
     * Get Wifi Connection Status
     */
-    //% subcategory=myIoT-Beta
-    //% weight=10 color=#CA85F1
+    //% subcategory=myIoT-MQTT
+    //% weight=90 color=#CA85F1
     //% group="Wifi"
     //% block="wifi connected?"
     export function getWifiConectionStatus(): boolean {
@@ -196,143 +216,50 @@ namespace SGBotic {
     /**
     * Get IP Address
     */
-    //% subcategory=myIoT-Beta
-    //% weight=10 color=#CA85F1
+    //% subcategory=myIoT-MQTT
+    //% weight=80 color=#CA85F1
     //% group="Wifi"
     //% block="IP address"
-    export function getIP(): string {
-
-        let serial_str: string = ""
-        let strData: string = ""
-        let count: number = 0
-        let str_completed: boolean = false;
-
-        let time: number = input.runningTime()
-        if (wifi_connected) {
-            sendAT("AT+CIFSR");
-            if (cmdResponse("OK")) {
-                serial_str = resp_str;
-                count = serial_str.indexOf("\"") + 1  //to remove \"
-                strData = serial_str.substr(count, 16)
-                count = strData.indexOf("\"")
-                strData = strData.substr(0, count)
-
-                return strData;
-            } else
-                return "ERR"
-        } else
-            return "wifi not connected"
-    }
-
-
-    /**
-    * Enable feedback through microbit Matrix LEDs
-    */
-    //% subcategory=myIoT-Beta
-    //% weight=10 color=#CA85F1
-    //% group="Wifi"
-    //% blockId="LEDFeedback" block="LED matrix feedback %stat"
-    export function LEDFeedback(stat: OnOffNum): void {
-        if (stat == OnOffNum.On)
-            led_Feedback = true  //enable LED matrix feedback
-        else
-            led_Feedback = false  //disable LED matrix feedback
-    }
-
-
-    /**
-    * Get latest value of variable from Ubidots IoT platform
-    */
-    //% subcategory=myIoT-Beta
-    //% weight=20 color=#5dd475
-    //% group="Ubidots"
-    //% blockId="ubidotsReadVal" block="Read value from |device %ubidotsDevice|variable %ubidotsVariable"
-    //% ubidotsDevice.defl=deviceID
-    //% ubidotsVariable.defl=variableID
-    export function ububidotsReadValidotsSub(ubidotsDevice: string, ubidotsVariable: string): string {
-        let ackTemp: string = ""
-        let varString: string = ""
-
-        while (wifi_serial_obj.sending_data) {
-            basic.pause(100)
-        }
-
-        wifi_serial_obj.sending_data = true;
-
-       //
-       //
-        clearRxBuffer();
-        sendAT("AT+CIPRECVMODE=1")
-        cmdResponse("OK")
-
-        let request: string = "GET /api/v1.6/devices/" + ubidotsDevice + "/" + ubidotsVariable + "/values/?page_size=1 HTTP/1.1" + "\u000D\u000A" +
-            "Host: " + ubidot_server + "\u000D\u000A" +
-            "User-Agent: CW01/1.0" + "\u000D\u000A" +
-            "Accept: */*" + "\u000D\u000A" +
-            "X-Auth-Token: " + ubidotsAPIToken + "\u000D\u000A" +
-            "Content-Type: application/json" + "\u000D\u000A" + "\u000D\u000A"
-
-
-        sendAT("AT+CIPSEND=" + (request.length).toString())
-        basic.pause(100)
-        sendAT(request)
-        basic.pause(1000)
-
-        sendAT("AT+CIPRECVDATA=200")
-        basic.pause(50)
-        varString += serial.readString()
-        basic.pause(50)
-        varString = ""
-
-        sendAT("AT+CIPRECVDATA=100")
-        basic.pause(50)
-        varString += serial.readString()
-        basic.pause(50)
-        varString = ""
-
-        sendAT("AT+CIPRECVDATA=200")
-        basic.pause(50)
-        varString += serial.readString()
-        basic.pause(50)
-
-        let count: number = varString.indexOf("\"value\": ") + "\"value\": ".length
-        let strData: string = varString.substr(count, 16)
-        count = strData.indexOf(",")
-        strData = strData.substr(0, count)
-
-        wifi_serial_obj.sending_data = false;
-        sendAT("AT+CIPRECVMODE=0")
-        cmdResponse("OK")
-        return strData
+    export function ipAddr(): string {
+        return ipaddress;
     }
 
 
     /**
     * Connect to Ubidots IoT platform Token
     */
-    //% subcategory=myIoT-Beta
-    //% weight=20 color=#5dd475
+    //% subcategory=myIoT-MQTT
+    //% weight=90 color=#5dd475
     //% group="Ubidots"
     //% blockId="connectUbidots" block="Connect to Ubidots with token %TKN"
     //% TKN.defl=your_ubidots_token
     export function connectUbidots(TKN: string): void {
         ubidotsAPIToken = TKN
 
-        sendAT("AT+CIPSTART=\"TCP\",\"industrial.api.ubidots.com\",80")
-        cmdResponse("OK");
+        //let userCfg: string = "AT+MQTTUSERCFG=0,1,\"microbit\",\"bbbbbbbbbbbb\",\"ubidots_user_name\",0,0,\"\"";
+        let userCfg: string = "AT+MQTTUSERCFG=0,1,\"microbit\",\"" + TKN + "\",\"ubidots_user_name\",0,0,\"\"";
+        sendAT(userCfg)
+        basic.pause(1000)
+        //cmdResponse("OK")
+
+        let conn: string = "AT+MQTTCONN=0,\"industrial.api.ubidots.com\",1883,0";
+        sendAT(conn)
+        basic.pause(1000)
+        //cmdResponse("OK")
     }
 
+
     /**
-    * Send numerical value to Ubidots IoT platform. 
+    * Send numerical data to Ubidots. Maximum three devices for free STEM account.
     */
-    //% subcategory=myIoT-Beta
-    //% weight=91 color=#5dd475
+    //% subcategory=myIoT-MQTT
+    //% weight=80 color=#5dd475
     //% group="Ubidots"
-    //% blockId="sendValueToUbidots" block="send value %value to Ubidots device %device variable %variable"
-    //% device.defl=deviceID
-    //% variable.defl=variableID
-    export function IoTSendValueToUbidots(value: number, device: string, variable: string): void {
-        let ackTemp: string = ""
+    //% blockId="ubidotsPub" block="send numerical value %ubidotsValue to |device %ubidotsDevice|variable %ubidotsVariable"
+    //% ubidotsDevice.defl=dev1
+    //% ubidotsVariable.defl=var1
+    //% ubidotsValue.defl=0.0
+    export function ubidotsPub(ubidotsValue: number, ubidotsDevice: string, ubidotsVariable: string): void {
 
         while (wifi_serial_obj.sending_data) {
             basic.pause(100)
@@ -340,32 +267,148 @@ namespace SGBotic {
 
         wifi_serial_obj.sending_data = true;
 
-        //
-        //
-        
-        ackTemp = ""
-        // do {
-        let payload: string = "{\"value\": " + value.toString() + "}"
+        let ubidots_device_prefix: string = "/v1.6/devices/"
+        let ubidots_pub_str: string = ubidots_device_prefix + ubidotsDevice + "/" + ubidotsVariable;
 
-        let request: string = "POST /api/v1.6/devices/" + device + "/" + variable + "/values HTTP/1.1" +
-            "\u000D\u000A" +
-            "Host: " + ubidot_server + "\u000D\u000A" +
-            "User-Agent: CW01/1.0" + "\u000D\u000A" +
-            "X-Auth-Token: " + ubidotsAPIToken + "\u000D\u000A" +
-            "Content-Type: application/json" + "\u000D\u000A" +
-            "Connection: keep-alive" + "\u000D\u000A" +
-            "Accept: */*" + "\u000D\u000A" +
-            "Content-Length: " + (payload.length).toString() + "\u000D\u000A" + "\u000D\u000A" + payload + "\u000D\u000A"
-
-        sendAT("AT+CIPSEND=" + (request.length).toString())
-        basic.pause(300)
-        sendAT(request)
-        basic.pause(1000)
-        ackTemp = serial.readString()
-
+        sendAT("AT+MQTTPUB=0," + "\"" + ubidots_pub_str + "\"" + "," + "\"" + ubidotsValue + "\"" + ",1,0");
+        //sendAT("AT+MQTTPUB=0,\"/v1.6/devices/deviceID/variableID\",\"19.9\",1,0");
+        //cmdResponse("OK");
+        basic.pause(500)
         wifi_serial_obj.sending_data = false
     }
 
+    /**
+    * Subscribe to MQTT topic
+    */
+    //% subcategory=myIoT-MQTT
+    //% weight=70 color=#5dd475
+    //% group="Ubidots"
+    //% blockId="ubidotsSubscribe" block="subscribe to device iotNode variable %ubidotsSubVariable"
+    //% ubidotsSubVariable.defl=var1
+    export function ubidotsSubscribe(ubidotsSubVariable: string): void {
+
+        //while (wifi_serial_obj.sending_data || wifi_serial_obj.mqtt_busy) {
+        //    basic.pause(100)
+        // }
+        while (wifi_serial_obj.sending_data) {
+            basic.pause(100)
+        }
+
+        mqttSubMessage[mqttSubCounter] = new mqttSubPacket();
+
+        wifi_serial_obj.sending_data = true;
+
+        let ubidots_device_prefix: string = "/v1.6/devices/iotNode"
+        let ubidots_sub_str: string = ubidots_device_prefix + "/" + ubidotsSubVariable;
+
+        mqttSubMessage[mqttSubCounter].variableID = ubidotsSubVariable.toLowerCase()
+
+
+        sendAT("AT+MQTTSUB=0," + "\"" + ubidots_sub_str + "\",0");
+        //cmdResponse("MQTT_EVENT_SUBSCRIBED");
+        basic.pause(500)
+        wifi_serial_obj.sending_data = false
+
+        mqttSubCounter += 1;
+    }
+
+
+    /**
+    * Ubidots variable received
+    */
+    //% subcategory=myIoT-MQTT
+    //% weight=60 color=#5dd475
+    //% group="Ubidots"
+    //% blockId="ubidotsSubVarRcv" block="Ubidots Varaible received"
+    export function ubidotsSubVarRcv(): string {
+
+        return mqttSubVarRcv
+    }
+
+    /**
+    * Value of the variable in numerical.
+    */
+    //% subcategory=myIoT-MQTT
+    //% weight=50 color=#5dd475
+    //% group="Ubidots"
+    //% blockId="ubidotsSubRcvValue" block="value of iotNode's Variable %subVariable"
+    //% subVariable.defl="var1"
+    export function ubidotsSubRcvValue(subVariable: string): number {
+        let val: number = 0
+
+        let i: number = 0
+        for (i = 0; i < mqttSubCounter; i++) {
+            if (mqttSubMessage[i].variableID == subVariable.toLowerCase()) {
+                val = parseInt(mqttSubMessage[i].value)
+            }
+        }
+        return val
+    }
+
+    /**
+    * The function is a callback function. It executes block inside the function whenever message from subscribed topic is received
+    */
+    //% subcategory=myIoT-MQTT
+    //% weight=18 color=#5dd475
+    //% group="Ubidots"
+    //% block="Ubidots on message received"
+    export function onMessageReceived(handler: () => void) {
+
+        let strTemp: string = ""
+        let strInter: string = ""
+        let strCount1: number = 0
+        let strCount2: number = 0
+        let strVariable: string = ""
+        let strValue: string = ""
+
+
+        while (wifi_serial_obj.sending_data) {
+            basic.pause(100)
+        }
+        serial.onDataReceived("\n", function () {
+            //while (wifi_serial_obj.sending_data) {
+            //    basic.pause(100)
+            //}
+
+            wifi_serial_obj.mqtt_busy = true;
+            let rcvString: string = serial.readUntil(serial.delimiters(Delimiters.NewLine))
+
+            if (rcvString.includes("iotnode")) {
+                strTemp = rcvString
+                strCount1 = strTemp.indexOf("iotnode") + 8
+                //strInter = strTemp.substr(strCount1, strCount2)
+                strCount2 = strTemp.indexOf("timestamp")
+                //get variable
+                strInter = strTemp.substr(strCount1, strCount2 - strCount1)
+                strCount1 = strInter.indexOf("\"")
+                strVariable = strInter.substr(0, strCount1)
+
+                //get value
+                strCount1 = strInter.indexOf("value") + 8
+                strValue = strInter.substr(strCount1, strInter.length - strCount1 - 3)
+
+                let i: number = 0
+                for (i = 0; i < mqttSubCounter; i++) {
+                    if (mqttSubMessage[i].variableID == strVariable) {
+                        mqttSubMessage[i].value = strValue
+                    }
+                }
+
+                mqttSubVarRcv = strVariable
+                //mqttSubValue = mqttSubMessage[0].value
+                handler()
+                // basic.showString(strValue)
+
+            }
+            wifi_serial_obj.mqtt_busy = false
+
+            //basic.showString("#")
+            //basic.showString(serial_res)
+        })
+
+
+
+    }
 
     //% shim=serialBuffer::setSerialBuffer
     function setSerialBuffer(size: number): void {

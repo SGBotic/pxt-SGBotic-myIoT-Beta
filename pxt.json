@@ -1,6 +1,6 @@
 {
-    "name": "pxt-SGBotic-myIoT-Beta",
-    "version": "0.0.14",
+    "name": "pxt-SGBotic-myIoT-MQTT",
+    "version": "0.1.14",
     "description": "Makdecode extension for IoT Module",
     "dependencies": {
         "core": "*",

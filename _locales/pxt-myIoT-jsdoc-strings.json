@@ -1,9 +1,0 @@
-{
-  "myIoT.IoTSendValueToUbidots": "Send numerical value to Ubidots IoT platform.",
-  "myIoT.LEDFeedback": "Enable feedback through microbit Matrix LEDs",
-  "myIoT.connectUbidots": "Connect to Ubidots IoT platform Token",
-  "myIoT.getIP": "Get IP Address",
-  "myIoT.getWifiConectionStatus": "Get Wifi Connection Status",
-  "myIoT.myIoT_module_init": "myIoT connect to wifi",
-  "myIoT.ububidotsReadValidotsSub": "Get latest value of variable from Ubidots IoT platform"
-}
